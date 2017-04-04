@@ -2,6 +2,7 @@ module Magnifique.App.Common
   ( magnifiqueAttrMap
 
   -- * Brick
+  , str
   , txt
   , continue
   , halt

@@ -14,10 +14,11 @@
 
 module Magnifique.Typeable where
 
-import Data.List (intercalate)
 import Data.Proxy
 import Data.Typeable
 import GHC.Generics
+
+import Magnifique.App.Common hiding (Key)
 
 data Zipper = Zipper Context SomeFocus
 
@@ -89,11 +90,14 @@ instance
   type Full (GenericCo x a) = a
   showRoot _ a = concat (toConName a' : replicate (gLength a') " _")
     where a' = from a
-  showHole (GenericCo ctx) = toConName ctx ++ fields ++ " !" ++ fields'
-    where
-      (fields, fields') =
-        splitAt (gKey (GCo_ @x @(Rep a) ctx))
-          (concat (replicate (gLength ctx) " _"))
+  showHole ctx'@(GenericCo ctx) =
+    let k = key ctx'
+        n = gLength ctx
+    in concat $
+      toConName ctx :
+      replicate k " _" ++
+      " !" :
+      replicate (n - k - 1) " _"
   key (GenericCo ctx) = gKey (GCo_ @x @(Rep a) ctx)
   down = (fmap . fmap) (\(GCo_ ctx, v) -> (GenericCo ctx, v)) . gDown @x . from
   cons (GenericCo ctx) = fmap to . gCons @x @(Rep a) (GCo_ ctx)
@@ -105,6 +109,7 @@ type family GCo (f :: * -> *) :: * -> * where
     :+: (f :*: GCo g)
   GCo (f :+: g) = GCo f :+: GCo g
   GCo (K1 _ _) = U1
+  GCo U1 = V1
 
 newtype GCo_ x f = GCo_ (GCo f ())
 
@@ -126,6 +131,9 @@ instance GLength (K1 i c) where
 
 instance GLength U1 where
   gLength _ = 0
+
+instance GLength V1 where
+  gLength = undefined
 
 class (GLength f, GLength (GCo f)) => HasGCo x f where
   gKey :: GCo_ x f -> Int
@@ -171,6 +179,11 @@ instance (IsContext (CxOf x c), Full (CxOf x c) ~ c) => HasGCo x (K1 i c) where
   gDown _ _ = Nothing
   gCons _ (SomeFocus _ a) = K1 <$> cast a
 
+instance HasGCo x U1 where
+  gKey _ = undefined
+  gDown _ _ = Nothing
+  gCons = undefined
+
 class ToConName f where
   toConName :: f p -> String
 
@@ -181,5 +194,32 @@ instance (ToConName f, ToConName g) => ToConName (f :+: g) where
   toConName (L1 cL) = toConName cL
   toConName (R1 cR) = toConName cR
 
-instance Constructor c => ToConName (M1 S c f) where
+instance Constructor c => ToConName (M1 C c f) where
   toConName _ = conName (undefined :: t c f a)
+
+zipperToText :: Zipper -> String
+zipperToText (Zipper ctx (SomeFocus proxy v)) =
+  unlines . reverse $ showRoot proxy v : fmap coToText ctx
+
+coToText :: SimpleContext -> String
+coToText (Co c) = showHole c
+
+magnifiqueApp :: App Zipper () String
+magnifiqueApp = App
+  { appDraw = \s ->
+      [str (zipperToText s)]
+  , appChooseCursor = \_ _ -> Nothing
+  , appHandleEvent = \s e -> case e of
+      VtyEvent e -> case e of
+        EvKey KUp [] -> continue' (moveUp s)
+        EvKey KDown [] -> continue' (moveDown 0 s)
+        EvKey KLeft [] -> continue' (moveLeft s)
+        EvKey KRight [] -> continue' (moveRight s)
+        EvKey (KChar 'q') [] -> halt s
+        _ -> continue s
+       where continue' Nothing = continue s
+             continue' (Just s) = continue s
+      _ -> continue s
+  , appStartEvent = return
+  , appAttrMap = const magnifiqueAttrMap
+  }
