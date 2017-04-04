@@ -60,7 +60,7 @@ coToText n (CoObject l k r) =
     Text.concat
       [ "{", showEllipsis l2, comma l2, showKeys l1, comma l1
       , showFocusKey k
-      , comma r1, showKeys r1, comma r2, showEllipsis l2, "}"
+      , comma r1, showKeys r1, comma r2, showEllipsis r2, "}"
       ]
   where
     showKeys [] = ""
