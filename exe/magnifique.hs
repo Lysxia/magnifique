@@ -10,12 +10,12 @@ import Options.Generic
 import System.Environment
 import System.IO
 import Magnifique hiding (Other)
-import Magnifique.App.Common
+import Magnifique.App
 import qualified Data.ByteString.Lazy as BS
 import qualified Magnifique.Aeson as Aeson
-import qualified Magnifique.App.Aeson as Aeson
+import qualified Magnifique.Aeson.App as Aeson
 
-data Type = Aeson | Other
+data Type = GenericTest | Aeson | Other
   deriving (Generic, Read)
 
 instance ParseField Type
@@ -31,6 +31,7 @@ instance ParseRecord Args where
 main = do
   args <- getRecord "magnifique"
   case fromMaybe Aeson (unHelpful (_type args)) of
+    GenericTest -> return ()
     Aeson -> do
       str <- BS.readFile (unHelpful (_file args))
       case Aeson.eitherDecode str of
@@ -47,22 +48,3 @@ main = do
           let s = _unzip (Parens (CommaSeparated [es]))
           defaultMain magnifiqueApp s
           return ()
-
-magnifiqueApp :: App Zipper () String
-magnifiqueApp = App
-  { appDraw = \s ->
-      [txt (exprToText (cozip s))]
-  , appChooseCursor = \_ _ -> Nothing
-  , appHandleEvent = \s e -> case e of
-      VtyEvent e -> case e of
-        EvKey KUp [] -> continue' (moveUp s)
-        EvKey KDown [] -> continue' (moveDown s)
-        EvKey KLeft [] -> continue' (moveLeft s)
-        EvKey KRight [] -> continue' (moveRight s)
-        EvKey (KChar 'q') [] -> halt s
-       where continue' Nothing = continue s
-             continue' (Just s) = continue s
-      _ -> continue s
-  , appStartEvent = return
-  , appAttrMap = magnifiqueAttrMap
-  }

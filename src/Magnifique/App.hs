@@ -1,14 +1,12 @@
-module Magnifique.App.Aeson where
+module Magnifique.App where
 
-import Brick
-import Graphics.Vty (Key(..), Event(..), defAttr)
-import Magnifique.Aeson
+import Magnifique
 import Magnifique.App.Common
 
 magnifiqueApp :: App Zipper () String
 magnifiqueApp = App
   { appDraw = \s ->
-      [txt (zipperToText s)]
+      [txt (exprToText (cozip s))]
   , appChooseCursor = \_ _ -> Nothing
   , appHandleEvent = \s e -> case e of
       VtyEvent e -> case e of
@@ -17,9 +15,10 @@ magnifiqueApp = App
         EvKey KLeft [] -> continue' (moveLeft s)
         EvKey KRight [] -> continue' (moveRight s)
         EvKey (KChar 'q') [] -> halt s
+        _ -> continue s
        where continue' Nothing = continue s
              continue' (Just s) = continue s
       _ -> continue s
   , appStartEvent = return
-  , appAttrMap = magnifiqueAttrMap
+  , appAttrMap = const magnifiqueAttrMap
   }
