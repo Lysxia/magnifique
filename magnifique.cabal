@@ -26,6 +26,7 @@ library
   build-depends:
     aeson,
     brick,
+    containers,
     pretty-simple,
     text,
     unordered-containers,

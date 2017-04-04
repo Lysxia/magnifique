@@ -14,9 +14,11 @@
 
 module Magnifique.Typeable where
 
+import Data.Map (Map)
 import Data.Proxy
 import Data.Typeable
 import GHC.Generics
+import qualified Data.Map as Map
 
 import Magnifique.App.Common hiding (Key)
 
@@ -71,9 +73,75 @@ moveRight (Zipper ctx v) = do
   (c, v') <- down @c a (succ (key c))
   return (Zipper (Co c : ctx) v')
 
+data MapCtx x b a = MapCtx Int (Map b a)
+
+instance
+  ( Show b, Ord b
+  , Typeable b, Typeable x
+  , IsContext (CxOf x a), a ~ Full (CxOf x a)
+  ) => IsContext (MapCtx x b a)
+  where
+  type Full (MapCtx x b a) = Map b a
+  showRoot _ m
+    | Map.null m = "{}"
+    | otherwise = "{...}"
+  showHole (MapCtx k m) =
+    let (l, (b, _) : r) = splitAt k $ Map.toAscList m
+        showFocusKey b = concat [show b, ":", focusText]
+    in
+      concat
+        [ "{", showEllipsis l, comma l
+        , showFocusKey b
+        , comma r, showEllipsis r, "}"
+        ]
+  key (MapCtx k _) = k
+  down m k
+    | k < 0 || k >= Map.size m = Nothing
+    | otherwise = Just (MapCtx k m, SomeFocus (Proxy @(CxOf x a)) (snd (Map.elemAt k m)))
+  cons (MapCtx k m) (SomeFocus _ a) =
+    let (b, _) = Map.elemAt k m
+    in fmap (\a -> Map.insert b a m) (cast a)
+
+data ListCtx x a = ListCtx Int [a]
+
+instance
+  ( Typeable x
+  , IsContext (CxOf x a), a ~ Full (CxOf x a)
+  ) => IsContext (ListCtx x a)
+  where
+  type Full (ListCtx x a) = [a]
+  showRoot _ [] = "[]"
+  showRoot _ (_ : _) = "[...]"
+  showHole (ListCtx k as) =
+    let (l, _ : r) = splitAt k as
+    in
+      concat
+        [ "[", showEllipsis l, comma l, focusText, comma r, showEllipsis r, "]" ]
+  key (ListCtx k _) = k
+  down as k
+    | k < 0 || k >= length as = Nothing
+    | otherwise = Just (ListCtx k as, SomeFocus (Proxy @(CxOf x a)) (as !! k))
+  cons (ListCtx k as) (SomeFocus _ a) =
+    let (l, _ : r) = splitAt k as
+    in fmap (\a -> l ++ a : r) (cast a)
+
+
+showEllipsis :: Foldable t => t a -> String
+showEllipsis w | null w = "" | otherwise = "_(" ++ show (length w) ++ ")"
+
+comma :: Foldable t => t a -> String
+comma w | null w = "" | otherwise = ","
+
+ellipsis :: String
+ellipsis = "_"
+
+focusText :: String
+focusText = "!"
+
+
 data NoCtx a
 
-instance (Typeable a, Show a) => IsContext (NoCtx a) where
+instance {-# OVERLAPPABLE #-} (Typeable a, Show a) => IsContext (NoCtx a) where
   type Full (NoCtx a) = a
   showRoot _ = show
   showHole = undefined
@@ -88,7 +156,7 @@ instance
   ) => IsContext (GenericCo x a)
   where
   type Full (GenericCo x a) = a
-  showRoot _ a = concat (toConName a' : replicate (gLength a') " _")
+  showRoot _ a = toConName a' ++ "{...}"
     where a' = from a
   showHole ctx'@(GenericCo ctx) =
     let k = key ctx'
@@ -97,7 +165,7 @@ instance
       toConName ctx :
       replicate k " _" ++
       " !" :
-      replicate (n - k - 1) " _"
+      replicate (n - k) " _"
   key (GenericCo ctx) = gKey (GCo_ @x @(Rep a) ctx)
   down = (fmap . fmap) (\(GCo_ ctx, v) -> (GenericCo ctx, v)) . gDown @x . from
   cons (GenericCo ctx) = fmap to . gCons @x @(Rep a) (GCo_ ctx)
@@ -197,6 +265,8 @@ instance (ToConName f, ToConName g) => ToConName (f :+: g) where
 instance Constructor c => ToConName (M1 C c f) where
   toConName _ = conName (undefined :: t c f a)
 
+
+
 zipperToText :: Zipper -> String
 zipperToText (Zipper ctx (SomeFocus proxy v)) =
   unlines . reverse $ showRoot proxy v : fmap coToText ctx
@@ -223,3 +293,11 @@ magnifiqueApp = App
   , appStartEvent = return
   , appAttrMap = const magnifiqueAttrMap
   }
+
+type family Blanket x a where
+  Blanket x Integer = NoCtx Integer
+  Blanket x Int = NoCtx Int
+  Blanket x (Map b a) = MapCtx x b a
+  Blanket x [Char] = NoCtx String
+  Blanket x [a] = ListCtx x a
+  Blanket x a = GenericCo x a
